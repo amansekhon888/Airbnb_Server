@@ -15,10 +15,10 @@ const UserSchema = new mongoose.Schema(
     },
     number: {
       type: Number,
+      message: "Please enter a valid number",
     },
     email: {
       type: String,
-      unique: true,
       validate: [validator.isEmail, "Please Enter a valid Email"],
     },
     password: {
@@ -82,4 +82,18 @@ UserSchema.methods.generateResetToken = function () {
     expiresIn: "10m",
   });
 };
+// verify Token
+UserSchema.statics.verifyToken = async function (token) {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await this.findById(decoded.id);
+    if (!user) {
+      throw new Error();
+    }
+    return user;
+  } catch (err) {
+    throw new Error("Token is invalid or expired");
+  }
+};
+
 export default mongoose.model("User", UserSchema);

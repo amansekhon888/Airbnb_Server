@@ -17,8 +17,7 @@ const OTPSchema = new mongoose.Schema(
     expires: {
       type: Date,
       required: true,
-      default: () => new Date(Date.now() + 60 * 1000), 
-      expires: 0,
+      default: () => new Date(Date.now() + 10 * 60 * 1000), // 10 mins expiry
     },
   },
   { timestamps: true }
@@ -45,15 +44,12 @@ OTPSchema.statics.generateOTP = async function (userId) {
 
 // verify otp
 OTPSchema.statics.verifyOTP = async function (userId, enteredOTP) {
-  console.log("Verifying OTP for userId:", userId, "Entered OTP:", enteredOTP);
 
   const otpDocument = await this.findOne({
     userId,
     code: enteredOTP,
-    expiryTime: { $gt: new Date() }, // Ensure OTP is not expired
+    expires: { $gt: new Date() }, // Ensure OTP is not expired
   });
-
-  console.log("OTP Found in DB:", otpDocument);
 
   return otpDocument; // Returns `null` if OTP is not found
 };
