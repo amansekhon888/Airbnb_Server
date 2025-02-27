@@ -1,88 +1,267 @@
 import User from "../../models/User/User.js";
 import Property from "../../models/Property/Property.js";
 import Amenities from "../../models/Property/Amenities.js";
+import Category from "../../models/Property/Category.js";
 import { catchAsyncErrors } from "../../middleware/catchAsyncErrors.js";
 import ErrorHandler from "../../Utils/errorhandler.js";
 import ResponseHandler from "../../Utils/resHandler.js";
 
-// export const addProperty = catchAsyncErrors(async (req, res, next) => {
-//     const { id } = req.params;
-//     const { step, host_id, category, title, property_type, description, type_of_place, availability_dates, gallery, address, price_per_night, cleaning_fee, service_fee, weekly_discount, monthly_discount, weekend_price, discount_first_booking, bedrooms, beds, max_guests, bathrooms, amenities, house_rules, cancellation_policy, safety_and_property, check_in_time, check_out_time, is_self_checkin, pet_allowed, notes, draft_steps_completed, tags, rating } = req.body;
-
-//     let property
-
-//     switch (step) {
-//         case 1:
-//             if (id) {
-//                 property = await Property.findByIdAndUpdate(id, {  host_id, category, title, property_type, description, type_of_place, availability_dates, gallery, address, draft_steps_completed: 1 }, { new: true });
-//             } else {
-//                 property = await Property.create({ host_id, category, title, property_type, description, type_of_place, availability_dates, gallery, address, isDraft: true, draft_steps_completed: 1  })
-//             }
-//             break;
-//         case 2:
-//             property = await Property.findByIdAndUpdate(id, { bedrooms, beds, max_guests, bathrooms, amenities, draft_steps_completed }, { new: true });
-//             break;
-//         case 3:
-//             property = await Property.findByIdAndUpdate(id, { price_per_night, cleaning_fee, service_fee, weekly_discount, monthly_discount, weekend_price, discount_first_booking }, { new: true });
-//             break;
-//         case 4:
-//             property = await Property.findByIdAndUpdate(id, { house_rules, cancellation_policy, safety_and_property, check_in_time, check_out_time }, { new: true });
-//             break;
-//         case 5:
-//             property = await Property.findByIdAndUpdate(id, { is_self_checkin, pet_allowed, notes }, { new: true });
-//             break;
-//         default:
-//             return next(ErrorHandler("Invalid step", 400));
-//     }
-            
-//     return ResponseHandler.send(res, "Property updated successfully", property, 200);
-// });
 export const addProperty = catchAsyncErrors(async (req, res, next) => {
-    const { id } = req.params;
-    const { step, host_id, category, title, property_type, description, type_of_place, availability_dates, gallery, address, price_per_night, cleaning_fee, service_fee, weekly_discount, monthly_discount, weekend_price, discount_first_booking, bedrooms, beds, max_guests, bathrooms, amenities, house_rules, cancellation_policy, safety_and_property, check_in_time, check_out_time, is_self_checkin, pet_allowed, notes } = req.body;
+  const { step, id, ...propertyData } = req.body;
 
-    let property;
+  // Validate Step
+  const stepUpdates = {
+    1: [
+      "host_id",
+      "category",
+      "title",
+      "property_type",
+      "description",
+      "type_of_place",
+      "availability_dates",
+      "gallery",
+      "address",
+    ],
+    2: ["bedrooms", "beds", "max_guests", "bathrooms", "amenities"],
+    3: [
+      "price_per_night",
+      "cleaning_fee",
+      "service_fee",
+      "weekly_discount",
+      "monthly_discount",
+      "weekend_price",
+      "discount_first_booking",
+    ],
+    4: [
+      "house_rules",
+      "cancellation_policy",
+      "safety_and_property",
+      "check_in_time",
+      "check_out_time",
+    ],
+    5: ["is_self_checkin", "pet_allowed", "notes"],
+    6: ["status", "isDraft"],
+  };
 
-    if (id) {
-        property = await Property.findById(id);
-        if (!property) return next(ErrorHandler("Property not found", 404));
+  if (!stepUpdates[step]) return next(new ErrorHandler("Invalid step", 400));
+
+  let updatedFields = stepUpdates[step].reduce((acc, field) => {
+    if (propertyData[field] !== undefined) acc[field] = propertyData[field];
+    return acc;
+  }, {});
+
+  if (step === 6) {
+    updatedFields.status = "active";
+    updatedFields.isDraft = false;
+  }
+
+  let property;
+
+  if (id) {
+    property = await Property.findById(id);
+    if (!property) return next(new ErrorHandler("Property not found", 404));
+
+    updatedFields.draft_steps_completed = Math.max(
+      property.draft_steps_completed || 0,
+      step
+    );
+
+    property = await Property.findByIdAndUpdate(
+      id,
+      { $set: updatedFields },
+      { new: true }
+    ).lean();
+  } else {
+    // Validate Host before Creating Property
+    const hostExists = await User.findById(req.user._id);
+    if (!hostExists) return next(new ErrorHandler("Invalid host ID", 400));
+
+    property = await Property.create({
+      ...updatedFields,
+      host_id: req.user._id,
+      isDraft: true,
+      draft_steps_completed: step,
+    });
+  }
+
+  return ResponseHandler.send(
+    res,
+    "Property saved successfully",
+    property,
+    200
+  );
+});
+
+export const editProperty = catchAsyncErrors(async (req, res, next) => {
+  const { id, step, ...propertyData } = req.body;
+
+  if (!id) return next(new ErrorHandler("Property ID is required", 400));
+
+  // Find existing property
+  let property = await Property.findById(id);
+  if (!property) return next(new ErrorHandler("Property not found", 404));
+
+  // Define allowed step updates
+  const stepUpdates = {
+    1: [
+      "category",
+      "title",
+      "property_type",
+      "description",
+      "type_of_place",
+      "availability_dates",
+      "gallery",
+      "address",
+    ],
+    2: ["bedrooms", "beds", "max_guests", "bathrooms", "amenities"],
+    3: [
+      "price_per_night",
+      "cleaning_fee",
+      "service_fee",
+      "weekly_discount",
+      "monthly_discount",
+      "weekend_price",
+      "discount_first_booking",
+    ],
+    4: [
+      "house_rules",
+      "cancellation_policy",
+      "safety_and_property",
+      "check_in_time",
+      "check_out_time",
+    ],
+    5: ["is_self_checkin", "pet_allowed", "notes"],
+  };
+
+  if (!stepUpdates[step]) return next(new ErrorHandler("Invalid step", 400));
+
+  // Only update fields relevant to the step
+  let updatedFields = stepUpdates[step].reduce((acc, field) => {
+    if (propertyData[field] !== undefined) acc[field] = propertyData[field];
+    return acc;
+  }, {});
+
+  // Update property
+  property = await Property.findByIdAndUpdate(
+    id,
+    { $set: updatedFields },
+    { new: true }
+  ).lean();
+
+  return ResponseHandler.send(
+    res,
+    "Property updated successfully",
+    property,
+    200
+  );
+});
+
+// get all active properties only
+export const getProperties = catchAsyncErrors(async (req, res, next) => {
+  const properties = await Property.find({ status: "active" });
+  return ResponseHandler.send(res, "Properties", properties, 200);
+});
+
+export const getMyProperties = catchAsyncErrors(async (req, res, next) => {
+  const properties = await Property.find({ host_id: req.user._id }).lean();
+  return ResponseHandler.send(res, "My Properties", properties, 200);
+});
+
+export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
+  const property = await Property.findById(req.params.id).lean();
+  if (!property) return next(new ErrorHandler("Property not found", 404));
+  return ResponseHandler.send(res, "Property details", property, 200);
+});
+
+export const deleteProperty = catchAsyncErrors(async (req, res, next) => {
+  const property = await Property.findById(req.params.id);
+  if (!property) return next(new ErrorHandler("Property not found", 404));
+
+  await property.remove();
+  return ResponseHandler.send(res, "Property deleted successfully", {}, 200);
+});
+
+
+// create Amenities
+export const createAmenities = catchAsyncErrors(async (req, res, next) => {
+    const { title, description, amenities } = req.body;
+  
+    if (!title || !amenities || !Array.isArray(amenities)) {
+      return next(new ErrorHandler("Title and amenities (array) are required", 400));
     }
+  
+    const newAmenities = await Amenities.create({ title, description, amenities });
+  
+    return ResponseHandler.send(res, "Amenities created successfully", newAmenities, 201);
+});
 
-    let updatedFields = {};
-    let message;
+//update Amenities
+export const updateAmenities = catchAsyncErrors(async (req, res, next) => {
+  const amenities = await
+    Amenities.findByIdAndUpdate(req.params
+        .id, req.body, {
+            new: true,
+    });
+    if (!amenities) return next(new ErrorHandler("Amenities not found", 404));
+    return ResponseHandler.send(res, "Amenities updated successfully", amenities, 200);
+}); 
 
-    switch (step) {
-        case 1:
-            updatedFields = { host_id, category, title, property_type, description, type_of_place, availability_dates, gallery, address };
-            break;
-        case 2:
-            updatedFields = { bedrooms, beds, max_guests, bathrooms, amenities };
-            break;
-        case 3:
-            updatedFields = { price_per_night, cleaning_fee, service_fee, weekly_discount, monthly_discount, weekend_price, discount_first_booking };
-            break;
-        case 4:
-            updatedFields = { house_rules, cancellation_policy, safety_and_property, check_in_time, check_out_time };
-            break;
-        case 5:
-            updatedFields = { is_self_checkin, pet_allowed, notes };
-            break;
-        case 6:
-            updatedFields = { status: "active", isDraft: false };
-            message = "Property added successfully";
-            break;
-        default:
-            return next(ErrorHandler("Invalid step", 400));
-    }
+// delete Amenities
+export const deleteAmenities = catchAsyncErrors(async (req, res, next) => {
+  const amenities = await Amenities.findById(req.params.id);
+  if (!amenities) return next(new ErrorHandler("Amenities not found", 404));
+  await Amenities.deleteOne({ _id: req.params.id });
+  return ResponseHandler.send(res, "Amenities deleted successfully", amenities, 200);
+});
 
-    updatedFields.draft_steps_completed = Math.max(property?.draft_steps_completed || 0, step);
+// get all amenities
+export const getAmenities = catchAsyncErrors(async (req, res, next) => {
+  const amenities = await Amenities.find({});
+  return ResponseHandler.send(res, "Amenities", amenities, 200);
+});
 
-    if (id) {
-        property = await Property.findByIdAndUpdate(id, updatedFields, { new: true });
-    } else {
-        property = await Property.create({ ...updatedFields, isDraft: true });
-        message = "Property added successfully";
-    }
+// create a new category
+export const createCategory = catchAsyncErrors(async (req, res, next) => {
+  const category = await Category.create(req.body);
+  return ResponseHandler.send(
+    res,
+    "Category created successfully",
+    category,
+    201
+  );
+});
 
-    return ResponseHandler.send(res, message || "Property updated successfully", property, 200);
+// update a category
+export const updateCategory = catchAsyncErrors(async (req, res, next) => {
+  const category = await Category.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true,
+    useFindAndModify: false,
+  });
+  if (!category) return next(new ErrorHandler("Category not found", 404));
+  return ResponseHandler.send(
+    res,
+    "Category updated successfully",
+    category,
+    200
+  );
+});
+
+// delete a category
+export const deleteCategory = catchAsyncErrors(async (req, res, next) => {
+  const category = await Category.findById(req.params.id);
+  if (!category) return next(new ErrorHandler("Category not found", 404));
+  await Category.deleteOne({ _id: req.params.id });
+  return ResponseHandler.send(
+    res,
+    "Category deleted successfully",
+    category,
+    200
+  );
+});
+
+// get all categories
+export const getCategories = catchAsyncErrors(async (req, res, next) => {
+  const categories = await Category.find({});
+  return ResponseHandler.send(res, "Categories", categories, 200);
 });
