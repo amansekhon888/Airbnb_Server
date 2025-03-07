@@ -9,7 +9,6 @@ const PropertySchema = new mongoose.Schema(
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
-      required: true,
     },
     title: String,
     property_type: {
@@ -21,12 +20,10 @@ const PropertySchema = new mongoose.Schema(
       type: String,
       enum: ["any", "room", "home"],
     },
-    availability_dates: [
-      {
-        start_date: Date,
-        end_date: Date,
-      },
-    ],
+    availability_dates: {
+      start_date: Date,
+      end_date: Date,
+    },
     gallery: [
       {
         url: String,
@@ -54,10 +51,7 @@ const PropertySchema = new mongoose.Schema(
     beds: Number,
     max_guests: Number,
     bathrooms: Number,
-    amenities: {
-      type: [mongoose.Schema.Types.ObjectId],
-      ref: "Amenities",
-    },
+    amenities: [String],
     house_rules: String,
     cancellation_policy: {
       type: {
@@ -92,7 +86,7 @@ const PropertySchema = new mongoose.Schema(
     },
     rating: {
       type: Number,
-      min: 1,
+      min: 0,
       max: 5,
       default: 0,
     },
@@ -104,7 +98,7 @@ const PropertySchema = new mongoose.Schema(
     isDraft: Boolean,
     draft_steps_completed: {
       type: Number,
-    }
+    },
   },
   { timestamps: true }
 );

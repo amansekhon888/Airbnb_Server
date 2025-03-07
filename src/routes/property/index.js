@@ -4,6 +4,7 @@ import {
   deleteProperty,
   editProperty,
   getMyProperties,
+  getMyPropertyById,
   getProperties,
   getPropertyById,
 } from "../../controllers/User/property.controller.js";
@@ -15,12 +16,8 @@ router.post("/add", isAuthenticatedUser, addProperty);
 router.post("/:id", isAuthenticatedUser, editProperty);
 router.delete("/:id", isAuthenticatedUser, deleteProperty);
 router.get("/my", isAuthenticatedUser, getMyProperties);
+router.get("/my/:id", isAuthenticatedUser, getMyPropertyById);
 router.get("/all", getProperties);
-router.get(
-  "/:id",
-  isAuthenticatedUser,
-  authorizeRoles("admin", "user"),
-  getPropertyById
-);
+router.get("/:id", getPropertyById);
 
 export default router;

@@ -7,7 +7,10 @@ import ErrorHandler from "../../Utils/errorhandler.js";
 import ResponseHandler from "../../Utils/resHandler.js";
 
 export const addProperty = catchAsyncErrors(async (req, res, next) => {
+  // console.log(req.body);
+
   const { step, id, ...propertyData } = req.body;
+  console.log(propertyData);
 
   // Validate Step
   const stepUpdates = {
@@ -72,6 +75,7 @@ export const addProperty = catchAsyncErrors(async (req, res, next) => {
       { new: true }
     ).lean();
   } else {
+    if (step !== 1) return next(new ErrorHandler("Invalid step", 400));
     // Validate Host before Creating Property
     const hostExists = await User.findById(req.user._id);
     if (!hostExists) return next(new ErrorHandler("Invalid host ID", 400));
@@ -166,9 +170,19 @@ export const getMyProperties = catchAsyncErrors(async (req, res, next) => {
   const properties = await Property.find({ host_id: req.user._id }).lean();
   return ResponseHandler.send(res, "My Properties", properties, 200);
 });
+export const getMyPropertyById = catchAsyncErrors(async (req, res, next) => {
+  const property = await Property.findById(req.params.id).lean();
+  if (!property) return next(new ErrorHandler("Property not found", 404));
+  return ResponseHandler.send(res, "Property details", property, 200);
+});
 
 export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
-  const property = await Property.findById(req.params.id).lean();
+  const property = await Property.findOne({
+    _id: req.params.id,
+    status: "active",
+  }).lean();
+  console.log(property);
+
   if (!property) return next(new ErrorHandler("Property not found", 404));
   return ResponseHandler.send(res, "Property details", property, 200);
 });
@@ -181,37 +195,55 @@ export const deleteProperty = catchAsyncErrors(async (req, res, next) => {
   return ResponseHandler.send(res, "Property deleted successfully", {}, 200);
 });
 
-
 // create Amenities
 export const createAmenities = catchAsyncErrors(async (req, res, next) => {
-    const { title, description, amenities } = req.body;
-  
-    if (!title || !amenities || !Array.isArray(amenities)) {
-      return next(new ErrorHandler("Title and amenities (array) are required", 400));
-    }
-  
-    const newAmenities = await Amenities.create({ title, description, amenities });
-  
-    return ResponseHandler.send(res, "Amenities created successfully", newAmenities, 201);
+  const { title, description, amenities } = req.body;
+
+  if (!title || !amenities || !Array.isArray(amenities)) {
+    return next(
+      new ErrorHandler("Title and amenities (array) are required", 400)
+    );
+  }
+
+  const newAmenities = await Amenities.create({
+    title,
+    description,
+    amenities,
+  });
+
+  return ResponseHandler.send(
+    res,
+    "Amenities created successfully",
+    newAmenities,
+    201
+  );
 });
 
 //update Amenities
 export const updateAmenities = catchAsyncErrors(async (req, res, next) => {
-  const amenities = await
-    Amenities.findByIdAndUpdate(req.params
-        .id, req.body, {
-            new: true,
-    });
-    if (!amenities) return next(new ErrorHandler("Amenities not found", 404));
-    return ResponseHandler.send(res, "Amenities updated successfully", amenities, 200);
-}); 
+  const amenities = await Amenities.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+  });
+  if (!amenities) return next(new ErrorHandler("Amenities not found", 404));
+  return ResponseHandler.send(
+    res,
+    "Amenities updated successfully",
+    amenities,
+    200
+  );
+});
 
 // delete Amenities
 export const deleteAmenities = catchAsyncErrors(async (req, res, next) => {
   const amenities = await Amenities.findById(req.params.id);
   if (!amenities) return next(new ErrorHandler("Amenities not found", 404));
   await Amenities.deleteOne({ _id: req.params.id });
-  return ResponseHandler.send(res, "Amenities deleted successfully", amenities, 200);
+  return ResponseHandler.send(
+    res,
+    "Amenities deleted successfully",
+    amenities,
+    200
+  );
 });
 
 // get all amenities
