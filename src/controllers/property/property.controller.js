@@ -97,9 +97,9 @@ export const addProperty = catchAsyncErrors(async (req, res, next) => {
 });
 
 export const editProperty = catchAsyncErrors(async (req, res, next) => {
-  const { id, step, ...propertyData } = req.body;
-
-  if (!id) return next(new ErrorHandler("Property ID is required", 400));
+  const id = req.params.id;
+  console.log(req.body);
+  const { step, ...propertyData } = req.body;
 
   // Find existing property
   let property = await Property.findById(id);
@@ -188,10 +188,14 @@ export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
 });
 
 export const deleteProperty = catchAsyncErrors(async (req, res, next) => {
-  const property = await Property.findById(req.params.id);
-  if (!property) return next(new ErrorHandler("Property not found", 404));
+  const property = await Property.deleteOne({
+    host_id: req.user._id,
+    _id: req.params.id, // Correctly specifying the property ID
+  });
 
-  await property.remove();
+  if (property.deletedCount === 0) {
+    return next(new ErrorHandler("Property not found", 404));
+  }
   return ResponseHandler.send(res, "Property deleted successfully", {}, 200);
 });
 

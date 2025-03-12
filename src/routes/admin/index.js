@@ -6,7 +6,7 @@ import {
   deleteCategory,
   updateAmenities,
   updateCategory,
-} from "../../controllers/User/property.controller.js";
+} from "../../controllers/property/property.controller.js";
 const router = Router();
 
 router.post("/create-category", createCategory);

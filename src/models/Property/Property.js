@@ -103,4 +103,18 @@ const PropertySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+PropertySchema.methods.isAvailable = function (checkIn, checkOut) {
+  if (!this.availability_dates.start_date || !this.availability_dates.end_date) {
+    return false; // If availability dates are not set, treat it as unavailable
+  }
+
+  const checkInDate = new Date(checkIn);
+  const checkOutDate = new Date(checkOut);
+
+  return (
+    checkInDate >= this.availability_dates.start_date &&
+    checkOutDate <= this.availability_dates.end_date
+  );
+};
+
 export default mongoose.model("Properties", PropertySchema);
