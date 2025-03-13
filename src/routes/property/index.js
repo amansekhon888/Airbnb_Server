@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   addProperty,
+  calculateBookingPrice,
   deleteProperty,
   editProperty,
   getMyProperties,
@@ -19,5 +20,6 @@ router.get("/my", isAuthenticatedUser, getMyProperties);
 router.get("/my/:id", isAuthenticatedUser, getMyPropertyById);
 router.get("/all", getProperties);
 router.get("/:id", getPropertyById);
+router.get("/calculate-price/:id", calculateBookingPrice)
 
 export default router;

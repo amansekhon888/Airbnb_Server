@@ -5,6 +5,8 @@ import Category from "../../models/Property/Category.js";
 import { catchAsyncErrors } from "../../middleware/catchAsyncErrors.js";
 import ErrorHandler from "../../Utils/errorhandler.js";
 import ResponseHandler from "../../Utils/resHandler.js";
+import Reservation from "../../models/Reservation/Reservation.js";
+import mongoose from "mongoose";
 
 export const addProperty = catchAsyncErrors(async (req, res, next) => {
   // console.log(req.body);
@@ -181,11 +183,111 @@ export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
     _id: req.params.id,
     status: "active",
   }).lean();
-  console.log(property);
 
   if (!property) return next(new ErrorHandler("Property not found", 404));
-  return ResponseHandler.send(res, "Property details", property, 200);
+  const reservations = await Reservation.find({
+    propertyId: req.params.id,
+  }).select("selectedDates");
+
+  const not_availability_dates = reservations.map(({ selectedDates }) => [
+    selectedDates.checkIn.toISOString().split("T")[0],
+    selectedDates.checkOut.toISOString().split("T")[0],
+  ]);
+  const fullDetail = {
+    ...property,
+    not_availability_dates,
+  };
+  return ResponseHandler.send(res, "Property details", fullDetail, 200);
 });
+
+export const calculateBookingPrice = async (req, res, next) => {
+  try {
+    const {id: propertyId} = req.params;
+    const { checkIn, checkOut } = req.query;
+
+    const property = await Property.findById(propertyId);
+    if (!property) return next(new ErrorHandler("Property not found", 404));
+
+    if (!property.isAvailable(checkIn, checkOut)) {
+      return next(new ErrorHandler("Sorry, no availability for this property on the selected dates", 400));
+  }
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    const numberOfNights = Math.ceil(
+      (checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)
+    );
+
+    if (numberOfNights <= 0)
+      return next(new ErrorHandler("Invalid check-in/check-out dates", 400));
+
+    // Check if the dates are available
+    const isUnavailable = await Reservation.exists({
+      propertyId,
+      $or: [
+        {
+          "selectedDates.checkIn": { $lt: checkOutDate },
+          "selectedDates.checkOut": { $gt: checkInDate },
+        },
+        { "selectedDates.checkIn": { $gte: checkInDate, $lt: checkOutDate } },
+        { "selectedDates.checkOut": { $gt: checkInDate, $lte: checkOutDate } },
+      ],
+    });
+
+    if (isUnavailable)
+      return next(new ErrorHandler("Selected dates are unavailable", 400));
+
+    // 🔹 Count existing bookings for first 3 bookings discount
+    const existingBookings = await Reservation.countDocuments({ propertyId });
+
+    let basePrice = 0;
+
+    // 🔹 Calculate total base price based on weekend rates
+    for (let i = 0; i < numberOfNights; i++) {
+      const date = new Date(checkInDate);
+      date.setDate(date.getDate() + i);
+      const dayOfWeek = date.getDay(); // 0 (Sunday) - 6 (Saturday)
+
+      // If weekend, use weekend_price; otherwise, use standard price_per_night
+      basePrice +=
+        dayOfWeek === 0 || dayOfWeek === 6 // Check for Sat-Sun
+          ? property.weekend_price || property.price_per_night
+          : property.price_per_night;
+    }
+
+    let discount = 0;
+
+    // 🔹 First 3 bookings get 33% discount (if enabled)
+    if (property.discount_first_booking && existingBookings < 3) {
+      discount = basePrice * 0.33;
+    } else {
+      // 🔹 Apply weekly (10%) / monthly (20%) discounts only if first 3 discount is not applied
+      if (numberOfNights > 30) discount = basePrice * 0.2; // 20% for long stays
+      else if (numberOfNights > 6) discount = basePrice * 0.1; // 10% for weekly stays
+    }
+    const discountType = existingBookings < 3? "first_booking_3_discount" : "weekly_monthly_discount";
+
+    const totalPrice =
+      basePrice -
+      discount +
+      (property.cleaning_fee || 0) +
+      (property.service_fee || 0);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        numberOfNights,
+        basePrice,
+        discount,
+        discountType,
+        cleaningFee: property.cleaning_fee,
+        serviceFee: property.service_fee,
+        totalPrice,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
 
 export const deleteProperty = catchAsyncErrors(async (req, res, next) => {
   const property = await Property.deleteOne({
