@@ -1,12 +1,12 @@
 import User from "../../models/User/User.js";
 import Property from "../../models/Property/Property.js";
 import Amenities from "../../models/Property/Amenities.js";
+import Wishlists from "../../models/Property/Wishlist.js";
 import Category from "../../models/Property/Category.js";
 import { catchAsyncErrors } from "../../middleware/catchAsyncErrors.js";
 import ErrorHandler from "../../Utils/errorhandler.js";
 import ResponseHandler from "../../Utils/resHandler.js";
 import Reservation from "../../models/Reservation/Reservation.js";
-import mongoose from "mongoose";
 
 export const addProperty = catchAsyncErrors(async (req, res, next) => {
   // console.log(req.body);
@@ -164,8 +164,23 @@ export const editProperty = catchAsyncErrors(async (req, res, next) => {
 
 // get all active properties only
 export const getProperties = catchAsyncErrors(async (req, res, next) => {
+  const userId = req.user?._id; // Get logged-in user ID
   const properties = await Property.find({ status: "active" });
-  return ResponseHandler.send(res, "Properties", properties, 200);
+
+  let wishlistPropertyIds = [];
+
+  if (userId) {
+    const wishlist = await Wishlists.find({ userId }).select("propertyId");
+    wishlistPropertyIds = wishlist.map((item) => item.propertyId.toString());
+  }
+
+  // Add isWishlisted flag to each property
+  const updatedProperties = properties.map((property) => ({
+    ...property._doc, // Spread property data
+    isWishlisted: wishlistPropertyIds.includes(property._id.toString()),
+  }));
+
+  return ResponseHandler.send(res, "Properties", updatedProperties, 200);
 });
 
 export const getMyProperties = catchAsyncErrors(async (req, res, next) => {
@@ -179,12 +194,24 @@ export const getMyPropertyById = catchAsyncErrors(async (req, res, next) => {
 });
 
 export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
+  const userId = req.user?._id; // Get logged-in user ID (null if not authenticated)
+
+  // Fetch property details
   const property = await Property.findOne({
     _id: req.params.id,
     status: "active",
-  }).lean();
+  })
+    .populate({
+      path: "host_id",
+      select: "first_name last_name _id createdAt",
+    })
+    .lean();
 
-  if (!property) return next(new ErrorHandler("Property not found", 404));
+  if (!property) {
+    return next(new ErrorHandler("Property not found", 404));
+  }
+
+  // Fetch property reservations (to get unavailable dates)
   const reservations = await Reservation.find({
     propertyId: req.params.id,
   }).select("selectedDates");
@@ -193,24 +220,45 @@ export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
     selectedDates.checkIn.toISOString().split("T")[0],
     selectedDates.checkOut.toISOString().split("T")[0],
   ]);
-  const fullDetail = {
-    ...property,
-    not_availability_dates,
-  };
-  return ResponseHandler.send(res, "Property details", fullDetail, 200);
+
+  // Check if property is in the user's wishlist
+  let isWishlisted = false;
+  if (userId) {
+    const wishlist = await Wishlists.findOne({
+      userId,
+      propertyId: property._id,
+    });
+
+    if (wishlist) {
+      isWishlisted = true;
+    }
+  }
+
+  // Return full property details with wishlist status
+  return ResponseHandler.send(
+    res,
+    "Property details",
+    { ...property, not_availability_dates, isWishlisted },
+    200
+  );
 });
 
 export const calculateBookingPrice = async (req, res, next) => {
   try {
-    const {id: propertyId} = req.params;
+    const { id: propertyId } = req.params;
     const { checkIn, checkOut } = req.query;
 
     const property = await Property.findById(propertyId);
     if (!property) return next(new ErrorHandler("Property not found", 404));
 
     if (!property.isAvailable(checkIn, checkOut)) {
-      return next(new ErrorHandler("Sorry, no availability for this property on the selected dates", 400));
-  }
+      return next(
+        new ErrorHandler(
+          "Sorry, no availability for this property on the selected dates",
+          400
+        )
+      );
+    }
     const checkInDate = new Date(checkIn);
     const checkOutDate = new Date(checkOut);
     const numberOfNights = Math.ceil(
@@ -264,7 +312,10 @@ export const calculateBookingPrice = async (req, res, next) => {
       if (numberOfNights > 30) discount = basePrice * 0.2; // 20% for long stays
       else if (numberOfNights > 6) discount = basePrice * 0.1; // 10% for weekly stays
     }
-    const discountType = existingBookings < 3? "first_booking_3_discount" : "weekly_monthly_discount";
+    const discountType =
+      existingBookings < 3
+        ? "first_booking_3_discount"
+        : "weekly_monthly_discount";
 
     const totalPrice =
       basePrice -
@@ -402,4 +453,75 @@ export const deleteCategory = catchAsyncErrors(async (req, res, next) => {
 export const getCategories = catchAsyncErrors(async (req, res, next) => {
   const categories = await Category.find({});
   return ResponseHandler.send(res, "Categories", categories, 200);
+});
+
+// add Wishlist
+export const addToWishlist = catchAsyncErrors(async (req, res, next) => {
+  const { propertyId } = req.params;
+  console.log("propertyId:", req.params);
+
+  if (!propertyId) {
+    return next(new ErrorHandler("Property ID is required", 400));
+  }
+
+  const existingWishlist = await Wishlists.findOne({
+    userId: req.user._id,
+    propertyId: propertyId,
+  });
+
+  if (existingWishlist) {
+    return next(new ErrorHandler("Property already in wishlist", 400));
+  }
+
+  const newWishlist = await Wishlists.create({
+    userId: req.user._id,
+    propertyId: propertyId,
+  });
+
+  return ResponseHandler.send(
+    res,
+    "Property added to wishlist successfully",
+    newWishlist,
+    201
+  );
+});
+
+// remove Wishlist
+export const removeFromWishlist = catchAsyncErrors(async (req, res, next) => {
+  const { propertyId } = req.params;
+  console.log("propertyId:", req.params);
+
+  if (!propertyId) {
+    return next(new ErrorHandler("Property ID is required", 400));
+  }
+
+  const wishlist = await Wishlists.findOneAndDelete({
+    userId: req.user._id,
+    propertyId: propertyId,
+  });
+
+  if (!wishlist) {
+    return next(new ErrorHandler("Property not in wishlist", 404));
+  }
+
+  return ResponseHandler.send(
+    res,
+    "Property removed from wishlist successfully",
+    wishlist,
+    200
+  );
+});
+
+// get all Wishlist
+export const getWishlist = catchAsyncErrors(async (req, res, next) => {
+  const wishlists = await Wishlists.find({ userId: req.user._id }).populate({
+    path: "propertyId",
+    select: "title price_per_night bedrooms bathrooms _id gallery tags",
+  });
+  const wishlistWithFlag = wishlists.map((wishlist) => ({
+    ...wishlist.propertyId.toObject(), // Convert to plain object
+    isWishlisted: true, // Add isWishlisted flag
+  }));
+
+  return ResponseHandler.send(res, "Wishlist", wishlistWithFlag, 200);
 });

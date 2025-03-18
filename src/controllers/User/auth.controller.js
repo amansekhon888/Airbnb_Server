@@ -4,7 +4,6 @@ import ErrorHandler from "../../Utils/errorhandler.js";
 import sendToken from "../../Utils/jwtToken.js";
 import ResponseHandler from "../../Utils/resHandler.js";
 import OTP from "../../models/User/OtpSchema.js";
-import bcrypt from "bcrypt";
 
 export const verify = catchAsyncErrors(async (req, res, next) => {
   const { number, email } = req.body;

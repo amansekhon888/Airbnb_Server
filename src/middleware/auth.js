@@ -22,6 +22,7 @@ const isAuthenticatedUser = catchAsyncErrors(async (req, res, next) => {
   ) {
     token = req.headers.authorization.split(" ")[1];
   }
+
   if (!token) {
     return next(new ErrorHandler("Please Login to access this resource", 401));
   }
@@ -49,3 +50,32 @@ const authorizeRoles = (...roles) => {
 };
 
 export { authorizeRoles, isAuthenticatedUser };
+
+const optionalAuth = catchAsyncErrors(async (req, res, next) => {
+  let token = null;
+
+  // Extract token from Authorization header
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
+  }
+  console.log("token:",token);
+
+  if (token) {
+    try {
+      // Verify token and fetch user
+      const decodedData = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decodedData.id).select("_id");
+    } catch (error) {
+      req.user = null; // Set user to null if token is invalid
+    }
+  } else {
+    req.user = null; // No token provided, treat as guest
+  }
+
+  next(); // Proceed to the next middleware or route handler
+});
+
+export default optionalAuth;

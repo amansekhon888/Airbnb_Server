@@ -55,6 +55,8 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isHost: Boolean,
+    languages: [String],
   },
   { timestamps: true }
 );
