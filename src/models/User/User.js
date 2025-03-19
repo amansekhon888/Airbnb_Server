@@ -17,6 +17,9 @@ const UserSchema = new mongoose.Schema(
       type: Number,
       message: "Please enter a valid number",
     },
+    avatar:{
+      url: String,
+    },
     email: {
       type: String,
       validate: [validator.isEmail, "Please Enter a valid Email"],
@@ -57,6 +60,7 @@ const UserSchema = new mongoose.Schema(
     },
     isHost: Boolean,
     languages: [String],
+    bio: String,
   },
   { timestamps: true }
 );

@@ -61,7 +61,6 @@ const optionalAuth = catchAsyncErrors(async (req, res, next) => {
   ) {
     token = req.headers.authorization.split(" ")[1];
   }
-  console.log("token:",token);
 
   if (token) {
     try {

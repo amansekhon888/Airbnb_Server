@@ -123,7 +123,7 @@ export const verifyOTP = catchAsyncErrors(async (req, res, next) => {
     );
   }
   let user;
-  
+
   if (number) {
     user = await User.findOne({ number });
   } else {
@@ -168,4 +168,43 @@ export const resetPassword = catchAsyncErrors(async (req, res, next) => {
   await user.save();
 
   return ResponseHandler.send(res, "Password reset successful", {}, 200);
+});
+
+// update profile
+
+export const updateProfile = catchAsyncErrors(async (req, res, next) => {
+  console.log(req.body);
+  
+  
+  const {
+    first_name,
+    last_name,
+    email,
+    number,
+    avatarUrl,
+    dob,
+    bio,
+    languages,
+  } = req.body;
+
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      first_name,
+      last_name,
+      email,
+      number,
+      avatar: { url: avatarUrl },
+      dob,
+      bio,
+      languages,
+    },
+    { new: true, runValidators: true }
+  );
+
+  if (!user) {
+    return next(new ErrorHandler("User not found", 404));
+  }
+
+  return ResponseHandler.send(res, "Profile updated successfully", user, 200);
 });

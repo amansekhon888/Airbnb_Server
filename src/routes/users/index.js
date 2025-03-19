@@ -5,6 +5,7 @@ import {
   login,
   resetPassword,
   signup,
+  updateProfile,
   verify,
   verifyOTP,
 } from "../../controllers/User/auth.controller.js";
@@ -29,5 +30,6 @@ router.post("/:propertyId/wishlist", isAuthenticatedUser, addToWishlist);
 router.delete("/:propertyId/wishlist", isAuthenticatedUser, removeFromWishlist);
 router.get("/wishlist", isAuthenticatedUser, getWishlist);
 router.get("/:id", userDetails);
+router.put("/update" , isAuthenticatedUser, updateProfile);
 
 export default router;
