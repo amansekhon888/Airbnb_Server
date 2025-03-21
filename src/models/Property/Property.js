@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { isPropertyAvailable } from "../../controllers/property/utils/property.utils.js";
 
 const PropertySchema = new mongoose.Schema(
   {
@@ -24,6 +25,11 @@ const PropertySchema = new mongoose.Schema(
       start_date: Date,
       end_date: Date,
     },
+    availability_period: {
+      type: Number,
+      enum: ["3", "6", "9", "12", "24"],
+    },
+    isBooking: Boolean,
     gallery: [
       {
         url: String,
@@ -84,7 +90,7 @@ const PropertySchema = new mongoose.Schema(
       enum: ["superhost", "popular", "featured", "new"],
       default: "new",
     },
-    rating: {
+    avgRating: {
       type: Number,
       min: 0,
       max: 5,
@@ -103,18 +109,8 @@ const PropertySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-PropertySchema.methods.isAvailable = function (checkIn, checkOut) {
-  if (!this.availability_dates.start_date || !this.availability_dates.end_date) {
-    return false; // If availability dates are not set, treat it as unavailable
-  }
-
-  const checkInDate = new Date(checkIn);
-  const checkOutDate = new Date(checkOut);
-
-  return (
-    checkInDate >= this.availability_dates.start_date &&
-    checkOutDate <= this.availability_dates.end_date
-  );
+PropertySchema.methods.isAvailable = async function (checkIn, checkOut) {
+  return await isPropertyAvailable(this, checkIn, checkOut);
 };
 
 export default mongoose.model("Properties", PropertySchema);

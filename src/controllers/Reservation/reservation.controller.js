@@ -11,17 +11,15 @@ export const createReservation = catchAsyncErrors(async (req, res, next) => {
 
     const property = await Property.findById(propertyId);
     if (!property) return next(new ErrorHandler("Property not found", 404));
-    if (!property.isAvailable(checkIn, checkOut)) {
-        return next(new ErrorHandler("Sorry, no availability for this property on the selected dates", 400));
+    const isAvailable = await property.isAvailable(checkIn, checkOut);
+    if (!isAvailable) {
+      return next(
+        new ErrorHandler(
+          "Sorry, no availability for this property on the selected dates",
+          400
+        )
+      );
     }
-
-    const checkInDate = new Date(checkIn), checkOutDate = new Date(checkOut);
-    const numberOfNights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
-    if (numberOfNights <= 0) return next(new ErrorHandler("Invalid check-in/check-out dates", 400));
-
-    const isBooked = await checkExistingReservation(propertyId, checkInDate, checkOutDate);
-    console.log(isBooked);
-    if (isBooked) return next(new ErrorHandler("Property is already booked for these dates", 400));
 
     const totalBasePrice = pricePerNight * numberOfNights;
     console.log(totalBasePrice);

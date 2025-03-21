@@ -7,7 +7,7 @@ import ResponseHandler from "../../Utils/resHandler.js";
 export const userDetails = catchAsyncErrors(async (req, res, next) => {
   const { id } = req.params;
   const user = await User.findById(id).select(
-    "first_name last_name email role isEmailVerified isNumberVerified createdAt languages avatar"
+    "first_name last_name email role isEmailVerified isNumberVerified createdAt languages avatar bio isHost"
   );
   if (!user) {
     return next(new ErrorHandler("User not found", 404));

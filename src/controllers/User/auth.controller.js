@@ -174,18 +174,10 @@ export const resetPassword = catchAsyncErrors(async (req, res, next) => {
 
 export const updateProfile = catchAsyncErrors(async (req, res, next) => {
   console.log(req.body);
-  
-  
-  const {
-    first_name,
-    last_name,
-    email,
-    number,
-    avatarUrl,
-    dob,
-    bio,
-    languages,
-  } = req.body;
+  const { first_name, last_name, email, number, avatar, dob, bio, languages } =
+    req.body;
+
+  console.log(avatar);
 
   const user = await User.findByIdAndUpdate(
     req.user._id,
@@ -194,13 +186,14 @@ export const updateProfile = catchAsyncErrors(async (req, res, next) => {
       last_name,
       email,
       number,
-      avatar: { url: avatarUrl },
+      avatar,
       dob,
       bio,
       languages,
     },
     { new: true, runValidators: true }
   );
+  console.log(user);
 
   if (!user) {
     return next(new ErrorHandler("User not found", 404));

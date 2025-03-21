@@ -7,6 +7,12 @@ import { catchAsyncErrors } from "../../middleware/catchAsyncErrors.js";
 import ErrorHandler from "../../Utils/errorhandler.js";
 import ResponseHandler from "../../Utils/resHandler.js";
 import Reservation from "../../models/Reservation/Reservation.js";
+import Review from "../../models/Property/Review.js";
+import {
+  getPropertyAggregationPipeline,
+  getWishlistedAggregation,
+} from "./utils/property.utils.js";
+import mongoose from "mongoose";
 
 export const addProperty = catchAsyncErrors(async (req, res, next) => {
   // console.log(req.body);
@@ -165,22 +171,55 @@ export const editProperty = catchAsyncErrors(async (req, res, next) => {
 // get all active properties only
 export const getProperties = catchAsyncErrors(async (req, res, next) => {
   const userId = req.user?._id; // Get logged-in user ID
-  const properties = await Property.find({ status: "active" });
+  const propertiesPipeline = [
+    { $match: { status: "active" } },
+    ...getWishlistedAggregation(userId),
+    {
+      $project: {
+        gallery: 1,
+        tags: 1,
+        title: 1,
+        avgRating: 1,
+        bedrooms: 1,
+        bathrooms: 1,
+        price_per_night: 1,
+        isWishlisted: 1, // Ensure this field is included
+      },
+    },
+  ];
 
-  let wishlistPropertyIds = [];
+  const properties = await Property.aggregate(propertiesPipeline);
+  return ResponseHandler.send(res, "Properties", properties, 200);
+});
 
-  if (userId) {
-    const wishlist = await Wishlists.find({ userId }).select("propertyId");
-    wishlistPropertyIds = wishlist.map((item) => item.propertyId.toString());
+export const searchProperties = catchAsyncErrors(async (req, res, next) => {
+  console.log("hello");
+  
+  const { location, checkIn, checkOut, guests } = req.query;
+  const userId = req.user?._id;
+
+  const checkInDate = checkIn ? new Date(checkIn) : null;
+  const checkOutDate = checkOut ? new Date(checkOut) : null;
+
+  if (checkIn && isNaN(checkInDate)) {
+    return next(new ErrorHandler("Invalid check-in date format", 400));
+  }
+  if (checkOut && isNaN(checkOutDate)) {
+    return next(new ErrorHandler("Invalid check-out date format", 400));
   }
 
-  // Add isWishlisted flag to each property
-  const updatedProperties = properties.map((property) => ({
-    ...property._doc, // Spread property data
-    isWishlisted: wishlistPropertyIds.includes(property._id.toString()),
-  }));
+  const pipeline = await getPropertyAggregationPipeline({
+    location,
+    checkInDate,
+    checkOutDate,
+    guests,
+    userId,
+  });
 
-  return ResponseHandler.send(res, "Properties", updatedProperties, 200);
+  // Execute aggregation
+  const properties = await Property.aggregate(pipeline);
+
+  return ResponseHandler.send(res, "Filtered Properties", properties, 200);
 });
 
 export const getMyProperties = catchAsyncErrors(async (req, res, next) => {
@@ -195,25 +234,31 @@ export const getMyPropertyById = catchAsyncErrors(async (req, res, next) => {
 
 export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
   const userId = req.user?._id; // Get logged-in user ID (null if not authenticated)
+  const propertyId = new mongoose.Types.ObjectId(req.params.id);
+  // Fetch property
+  const propertyPipeline = [
+    { $match: { _id: propertyId, status: "active" } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "host_id",
+        foreignField: "_id",
+        as: "host",
+      },
+    },
+    { $unwind: "$host" },
+    ...getWishlistedAggregation(userId), // Use reusable wishlist aggregation
+  ];
 
-  // Fetch property details
-  const property = await Property.findOne({
-    _id: req.params.id,
-    status: "active",
-  })
-    .populate({
-      path: "host_id",
-      select: "first_name last_name _id createdAt",
-    })
-    .lean();
-
-  if (!property) {
+  const property = await Property.aggregate(propertyPipeline);
+  const propertyData = property[0];
+  if (!property.length) {
     return next(new ErrorHandler("Property not found", 404));
   }
 
   // Fetch property reservations (to get unavailable dates)
   const reservations = await Reservation.find({
-    propertyId: req.params.id,
+    propertyId: propertyId,
   }).select("selectedDates");
 
   const not_availability_dates = reservations.map(({ selectedDates }) => [
@@ -221,24 +266,18 @@ export const getPropertyById = catchAsyncErrors(async (req, res, next) => {
     selectedDates.checkOut.toISOString().split("T")[0],
   ]);
 
-  // Check if property is in the user's wishlist
-  let isWishlisted = false;
-  if (userId) {
-    const wishlist = await Wishlists.findOne({
-      userId,
-      propertyId: property._id,
-    });
-
-    if (wishlist) {
-      isWishlisted = true;
-    }
-  }
+  const reviews = await Review.find({ propertyId: property._id })
+    .populate({
+      path: "userId",
+      select: "first_name last_name avatar",
+    })
+    .lean();
 
   // Return full property details with wishlist status
   return ResponseHandler.send(
     res,
     "Property details",
-    { ...property, not_availability_dates, isWishlisted },
+    { ...propertyData, not_availability_dates, reviews },
     200
   );
 });
@@ -251,7 +290,8 @@ export const calculateBookingPrice = async (req, res, next) => {
     const property = await Property.findById(propertyId);
     if (!property) return next(new ErrorHandler("Property not found", 404));
 
-    if (!property.isAvailable(checkIn, checkOut)) {
+    const isAvailable = await property.isAvailable(checkIn, checkOut);
+    if (!isAvailable) {
       return next(
         new ErrorHandler(
           "Sorry, no availability for this property on the selected dates",
@@ -259,69 +299,46 @@ export const calculateBookingPrice = async (req, res, next) => {
         )
       );
     }
+
     const checkInDate = new Date(checkIn);
     const checkOutDate = new Date(checkOut);
-    const numberOfNights = Math.ceil(
+    const numberOfNights = Math.floor(
       (checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)
     );
 
     if (numberOfNights <= 0)
       return next(new ErrorHandler("Invalid check-in/check-out dates", 400));
 
-    // Check if the dates are available
-    const isUnavailable = await Reservation.exists({
-      propertyId,
-      $or: [
-        {
-          "selectedDates.checkIn": { $lt: checkOutDate },
-          "selectedDates.checkOut": { $gt: checkInDate },
-        },
-        { "selectedDates.checkIn": { $gte: checkInDate, $lt: checkOutDate } },
-        { "selectedDates.checkOut": { $gt: checkInDate, $lte: checkOutDate } },
-      ],
-    });
-
-    if (isUnavailable)
-      return next(new ErrorHandler("Selected dates are unavailable", 400));
-
-    // 🔹 Count existing bookings for first 3 bookings discount
-    const existingBookings = await Reservation.countDocuments({ propertyId });
-
     let basePrice = 0;
-
-    // 🔹 Calculate total base price based on weekend rates
     for (let i = 0; i < numberOfNights; i++) {
       const date = new Date(checkInDate);
       date.setDate(date.getDate() + i);
-      const dayOfWeek = date.getDay(); // 0 (Sunday) - 6 (Saturday)
+      const dayOfWeek = date.getDay();
 
-      // If weekend, use weekend_price; otherwise, use standard price_per_night
       basePrice +=
         dayOfWeek === 0 || dayOfWeek === 6 // Check for Sat-Sun
-          ? property.weekend_price || property.price_per_night
-          : property.price_per_night;
+          ? property.weekend_price || property.price_per_night || 0
+          : property.price_per_night || 0;
     }
 
     let discount = 0;
+    const existingBookings = await Reservation.countDocuments({ propertyId });
 
-    // 🔹 First 3 bookings get 33% discount (if enabled)
+    let discountType = "none";
     if (property.discount_first_booking && existingBookings < 3) {
       discount = basePrice * 0.33;
-    } else {
-      // 🔹 Apply weekly (10%) / monthly (20%) discounts only if first 3 discount is not applied
-      if (numberOfNights > 30) discount = basePrice * 0.2; // 20% for long stays
-      else if (numberOfNights > 6) discount = basePrice * 0.1; // 10% for weekly stays
+      discountType = "first_booking_3_discount";
+    } else if (numberOfNights > 30) {
+      discount = basePrice * 0.2; // 20% for long stays
+      discountType = "monthly_discount";
+    } else if (numberOfNights > 6) {
+      discount = basePrice * 0.1; // 10% for weekly stays
+      discountType = "weekly_discount";
     }
-    const discountType =
-      existingBookings < 3
-        ? "first_booking_3_discount"
-        : "weekly_monthly_discount";
 
-    const totalPrice =
-      basePrice -
-      discount +
-      (property.cleaning_fee || 0) +
-      (property.service_fee || 0);
+    const cleaningFee = property.cleaning_fee || 0;
+    const serviceFee = property.service_fee || 0;
+    const totalPrice = basePrice - discount + cleaningFee + serviceFee;
 
     return res.status(200).json({
       success: true,
@@ -330,8 +347,8 @@ export const calculateBookingPrice = async (req, res, next) => {
         basePrice,
         discount,
         discountType,
-        cleaningFee: property.cleaning_fee,
-        serviceFee: property.service_fee,
+        cleaningFee,
+        serviceFee,
         totalPrice,
       },
     });

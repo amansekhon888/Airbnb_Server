@@ -11,7 +11,19 @@ export const uploadSingleImage = catchAsyncErrors(async (req, res, next) => {
     if (!req.file) return next(new ErrorHandler("No file uploaded", 400));
 
     const folder = req.body.folder || "uploads";
+    const oldImagePublicId = req.body.oldImagePublicId; // Get old image public ID from request
 
+    // Remove old image if exists
+    if (oldImagePublicId) {
+      try {
+        await cloudinary.uploader.destroy(oldImagePublicId);
+        console.log("Old image deleted successfully:", oldImagePublicId);
+      } catch (error) {
+        console.error("Failed to delete old image:", error);
+      }
+    }
+
+    // Upload new image
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         { folder },
@@ -26,13 +38,14 @@ export const uploadSingleImage = catchAsyncErrors(async (req, res, next) => {
     return ResponseHandler.send(
       res,
       "Image uploaded successfully",
-      { url: result.secure_url, folder },
+      { url: result.secure_url, publicId: result.public_id },
       200
     );
   } catch (error) {
     return next(new ErrorHandler(`${error.message}`, 500));
   }
 });
+
 
 // Upload multiple images
 export const uploadMultipleImages = catchAsyncErrors(async (req, res, next) => {

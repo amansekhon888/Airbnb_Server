@@ -16,6 +16,7 @@ import {
   removeFromWishlist,
 } from "../../controllers/property/property.controller.js";
 import { userDetails } from "../../controllers/User/user.controller.js";
+import { postReview } from "../../controllers/User/user.review.controller.js";
 
 const router = Router();
 
@@ -30,6 +31,9 @@ router.post("/:propertyId/wishlist", isAuthenticatedUser, addToWishlist);
 router.delete("/:propertyId/wishlist", isAuthenticatedUser, removeFromWishlist);
 router.get("/wishlist", isAuthenticatedUser, getWishlist);
 router.get("/:id", userDetails);
-router.put("/update" , isAuthenticatedUser, updateProfile);
+router.put("/update", isAuthenticatedUser, updateProfile);
+
+// Reviews
+router.post("/review/:propertyId", isAuthenticatedUser, postReview);
 
 export default router;

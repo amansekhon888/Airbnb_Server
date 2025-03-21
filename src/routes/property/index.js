@@ -8,6 +8,7 @@ import {
   getMyPropertyById,
   getProperties,
   getPropertyById,
+  searchProperties,
 } from "../../controllers/property/property.controller.js";
 import { authorizeRoles, isAuthenticatedUser } from "../../middleware/auth.js";
 
@@ -19,6 +20,7 @@ router.delete("/:id", isAuthenticatedUser, deleteProperty);
 router.get("/my", isAuthenticatedUser, getMyProperties);
 router.get("/my/:id", isAuthenticatedUser, getMyPropertyById);
 router.get("/all", getProperties);
+router.get("/search", searchProperties);
 router.get("/:id", getPropertyById);
 router.get("/calculate-price/:id", calculateBookingPrice);
 

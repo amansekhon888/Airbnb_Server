@@ -19,6 +19,7 @@ const UserSchema = new mongoose.Schema(
     },
     avatar:{
       url: String,
+      publicId: String,
     },
     email: {
       type: String,
